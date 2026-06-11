@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f5f7fb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="语音笔记">
+<title>语音笔记 · VoiceNotes</title>
+<style>
+:root{
+  --bg:#f5f7fb; --card:#ffffff; --text:#16181d; --text2:#6b7280; --text3:#9ca3af;
+  --accent:#4f6ef7; --accent2:#06b6d4;
+  --grad:linear-gradient(135deg,#06b6d4 0%,#4f6ef7 60%,#7c5cf0 100%);
+  --danger:#ef4444; --ok:#10b981;
+  --radius:16px; --shadow:0 2px 12px rgba(30,41,80,.07);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:15px; line-height:1.55; overscroll-behavior:none;
+}
+button{font-family:inherit;border:none;background:none;cursor:pointer;color:inherit}
+input,textarea,select{font-family:inherit;font-size:15px;color:var(--text)}
+::placeholder{color:var(--text3)}
+
+/* ---------- 布局 ---------- */
+.view{display:none;min-height:100%}
+.view.active{display:block}
+.page{max-width:560px;margin:0 auto;padding:0 18px calc(120px + var(--safe-b))}
+
+/* ---------- 顶栏 ---------- */
+header.topbar{
+  position:sticky;top:0;z-index:10;
+  background:rgba(245,247,251,.85);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  padding:16px 0 10px;
+}
+.topbar-inner{max-width:560px;margin:0 auto;padding:0 18px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:9px;font-size:19px;font-weight:700;letter-spacing:.3px}
+.logo-dot{width:30px;height:30px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(79,110,247,.35)}
+.logo-dot svg{width:17px;height:17px}
+.icon-btn{width:38px;height:38px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;transition:transform .15s}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn svg{width:19px;height:19px;stroke:var(--text2)}
+
+/* ---------- 搜索 ---------- */
+.search{margin:10px 0 16px;position:relative}
+.search input{
+  width:100%;padding:11px 14px 11px 40px;border:none;border-radius:13px;
+  background:var(--card);box-shadow:var(--shadow);outline:none;
+}
+.search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--text3)}
+
+/* ---------- 笔记卡片 ---------- */
+.note-card{
+  background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:15px 16px;margin-bottom:12px;cursor:pointer;
+  transition:transform .15s, box-shadow .15s; position:relative;overflow:hidden;
+}
+.note-card:active{transform:scale(.985)}
+.note-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad);opacity:.85}
+.note-title{font-weight:650;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.note-meta{font-size:12px;color:var(--text3);margin-bottom:7px;display:flex;gap:10px;align-items:center}
+.note-preview{font-size:13.5px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500;white-space:nowrap}
+.badge.summarizing{background:#eef2ff;color:var(--accent)}
+.badge.unsummarized{background:#fef3c7;color:#b45309}
+.badge.voice{background:#ecfeff;color:#0e7490}
+
+.empty{
+  text-align:center;color:var(--text3);padding:70px 30px 30px;
+}
+.empty .big{font-size:46px;margin-bottom:14px}
+.empty p{font-size:14px;line-height:1.8}
+
+/* ---------- 底部录音按钮 ---------- */
+.fab-wrap{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  padding:14px 0 calc(18px + var(--safe-b));
+  background:linear-gradient(to top,var(--bg) 55%,transparent);
+  display:flex;align-items:center;justify-content:center;gap:26px;pointer-events:none;
+}
+.fab-wrap>*{pointer-events:auto}
+.fab{
+  width:68px;height:68px;border-radius:50%;background:var(--grad);
+  box-shadow:0 8px 24px rgba(79,110,247,.45);
+  display:flex;align-items:center;justify-content:center;transition:transform .15s;
+}
+.fab:active{transform:scale(.9)}
+.fab svg{width:28px;height:28px}
+.fab-side{
+  width:46px;height:46px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center;
+}
+.fab-side svg{width:20px;height:20px;stroke:var(--text2)}
+.fab-side:active{transform:scale(.9)}
+
+/* ---------- 录音页 ---------- */
+#view-record{
+  position:fixed;inset:0;z-index:50;background:rgba(16,20,35,.97);
+  color:#eef1ff;flex-direction:column;
+}
+#view-record.active{display:flex}
+.rec-head{padding:calc(18px + env(safe-area-inset-top,0px)) 22px 0;display:flex;justify-content:space-between;align-items:center}
+.rec-status{font-size:13px;color:#8b93b8;letter-spacing:1px}
+.rec-timer{font-variant-numeric:tabular-nums;font-size:15px;color:#aeb7e0}
+.rec-orb-zone{display:flex;align-items:center;justify-content:center;padding:34px 0 10px}
+.rec-orb{position:relative;width:120px;height:120px;display:flex;align-items:center;justify-content:center}
+.rec-orb .core{
+  width:88px;height:88px;border-radius:50%;background:var(--grad);
+  display:flex;align-items:center;justify-content:center;z-index:2;
+  box-shadow:0 0 40px rgba(79,110,247,.55);
+}
+.rec-orb .core svg{width:34px;height:34px}
+.rec-orb .ring{
+  position:absolute;inset:0;border-radius:50%;background:rgba(99,130,247,.25);
+  animation:pulse 1.8s ease-out infinite;
+}
+.rec-orb .ring:nth-child(2){animation-delay:.6s}
+@keyframes pulse{0%{transform:scale(.75);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+.rec-transcript{
+  flex:1;overflow-y:auto;margin:16px 22px;padding:18px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+  border-radius:18px;font-size:16px;line-height:1.85;
+}
+.rec-transcript .interim{color:#7d86ad}
+.rec-transcript .hint{color:#5e6587;font-size:14px}
+.rec-actions{display:flex;justify-content:center;gap:48px;padding:8px 0 calc(34px + var(--safe-b))}
+.rec-btn{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px;color:#aeb7e0}
+.rec-btn .circle{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.rec-btn .circle svg{width:24px;height:24px}
+.rec-btn.cancel .circle{background:rgba(255,255,255,.1)}
+.rec-btn.done .circle{background:var(--ok);box-shadow:0 6px 18px rgba(16,185,129,.4)}
+
+/* ---------- 详情页 / 设置页（抽屉式整页） ---------- */
+.subpage{
+  position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;
+  animation:slidein .22s ease;
+}
+@keyframes slidein{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+.sub-top{
+  position:sticky;top:0;z-index:5;background:rgba(245,247,251,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  display:flex;align-items:center;gap:10px;padding:calc(14px + env(safe-area-inset-top,0px)) 14px 10px;
+}
+.sub-top .title{font-weight:650;font-size:16px;flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-body{max-width:560px;margin:0 auto;padding:6px 18px calc(50px + var(--safe-b))}
+
+.section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px}
+.section h3{font-size:13px;color:var(--text3);font-weight:600;letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.section h3 .bar{display:inline-block;width:3px;height:12px;border-radius:2px;background:var(--grad)}
+.summary-abstract{font-size:15px;margin-bottom:10px}
+.points li{margin-left:20px;margin-bottom:6px;color:var(--text)}
+.transcript-text{font-size:14.5px;color:var(--text2);white-space:pre-wrap;word-break:break-word}
+.detail-meta{font-size:12.5px;color:var(--text3);margin:4px 2px 14px;display:flex;gap:14px}
+.detail-title-row{display:flex;align-items:flex-start;gap:8px;margin:14px 2px 0}
+.detail-title-row h2{font-size:21px;font-weight:700;flex:1;line-height:1.4}
+.detail-actions{display:flex;gap:10px;margin-top:4px}
+.act-btn{
+  flex:1;padding:11px 0;border-radius:13px;background:var(--card);box-shadow:var(--shadow);
+  font-size:13.5px;font-weight:550;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text2);
+}
+.act-btn:active{transform:scale(.96)}
+.act-btn svg{width:16px;height:16px;stroke:currentColor}
+.act-btn.danger{color:var(--danger)}
+.act-btn.primary{color:var(--accent)}
+
+/* ---------- 表单 ---------- */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--text2);margin-bottom:6px;font-weight:550}
+.field input,.field select,.field textarea{
+  width:100%;padding:11px 13px;border-radius:12px;border:1.5px solid #e5e9f2;background:#fafbfe;outline:none;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+.field .tip{font-size:12px;color:var(--text3);margin-top:5px;line-height:1.6}
+.btn-main{
+  width:100%;padding:13px;border-radius:13px;background:var(--grad);color:#fff;
+  font-size:15px;font-weight:600;box-shadow:0 6px 16px rgba(79,110,247,.3);
+}
+.btn-main:active{transform:scale(.98)}
+.btn-ghost{width:100%;padding:12px;border-radius:13px;background:var(--card);box-shadow:var(--shadow);color:var(--text2);font-size:14px;margin-top:10px}
+.help-text{font-size:13px;color:var(--text2);line-height:1.9}
+.help-text b{color:var(--text)}
+
+/* ---------- 文字笔记弹窗 ---------- */
+.modal-mask{position:fixed;inset:0;z-index:60;background:rgba(20,24,40,.45);display:none;align-items:flex-end;justify-content:center}
+.modal-mask.active{display:flex}
+.modal{
+  width:100%;max-width:560px;background:var(--card);border-radius:22px 22px 0 0;
+  padding:20px 20px calc(24px + var(--safe-b));animation:up .22s ease;
+}
+@keyframes up{from{transform:translateY(60px);opacity:.4}to{transform:none;opacity:1}}
+.modal h3{font-size:16px;margin-bottom:12px}
+.modal textarea{width:100%;height:140px;padding:12px;border-radius:12px;border:1.5px solid #e5e9f2;background:#fafbfe;outline:none;resize:none}
+.modal .row{display:flex;gap:10px;margin-top:14px}
+.modal .row button{flex:1;padding:12px;border-radius:12px;font-size:15px;font-weight:550}
+.modal .row .cancel{background:#f1f3f9;color:var(--text2)}
+.modal .row .ok{background:var(--grad);color:#fff}
+
+/* ---------- Toast ---------- */
+#toast{
+  position:fixed;left:50%;bottom:calc(120px + var(--safe-b));transform:translateX(-50%) translateY(20px);
+  background:rgba(22,26,40,.92);color:#fff;padding:10px 18px;border-radius:99px;font-size:13.5px;
+  opacity:0;pointer-events:none;transition:all .25s;z-index:99;white-space:nowrap;max-width:88vw;overflow:hidden;text-overflow:ellipsis;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid #c7d2fe;border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px;margin-right:4px}
+@keyframes rot{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ============ 主页 ============ -->
+<div id="view-home" class="view active">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">
+        <span class="logo-dot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+        </span>
+        语音笔记
+      </div>
+      <button class="icon-btn" onclick="openSettings()" aria-label="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="page">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="search-input" type="search" placeholder="搜索笔记…" oninput="renderList()">
+    </div>
+    <div id="note-list"></div>
+  </div>
+
+  <div class="fab-wrap">
+    <button class="fab-side" onclick="openTextModal()" aria-label="文字笔记">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>
+    <button class="fab" onclick="startRecording()" aria-label="开始录音">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+    </button>
+    <span style="width:46px"></span>
+  </div>
+</div>
+
+<!-- ============ 录音页 ============ -->
+<div id="view-record" class="view">
+  <div class="rec-head">
+    <span class="rec-status" id="rec-status">● 正在聆听</span>
+    <span class="rec-timer" id="rec-timer">00:00</span>
+  </div>
+  <div class="rec-orb-zone">
+    <div class="rec-orb">
+      <span class="ring"></span><span class="ring"></span>
+      <span class="core">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+      </span>
+    </div>
+  </div>
+  <div class="rec-transcript" id="rec-transcript"><span class="hint">开始说话，文字会实时出现在这里…</span></div>
+  <div class="rec-actions">
+    <button class="rec-btn cancel" onclick="cancelRecording()">
+      <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+      取消
+    </button>
+    <button class="rec-btn done" onclick="finishRecording()">
+      <span class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+      完成
+    </button>
+  </div>
+</div>
+
+<!-- ============ 文字笔记弹窗 ============ -->
+<div class="modal-mask" id="text-modal">
+  <div class="modal">
+    <h3>✍️ 记录想法</h3>
+    <textarea id="text-input" placeholder="输入你的想法…"></textarea>
+    <div class="row">
+      <button class="cancel" onclick="closeTextModal()">取消</button>
+      <button class="ok" onclick="saveTextNote()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="subpage-root"></div>
+
+<script>
+'use strict';
+/* ==================== 存储 ==================== */
+const LS_NOTES = 'voicenotes.notes';
+const LS_SETTINGS = 'voicenotes.settings';
+
+function loadNotes(){ try{ return JSON.parse(localStorage.getItem(LS_NOTES)) || []; }catch(e){ return []; } }
+function saveNotes(){ localStorage.setItem(LS_NOTES, JSON.stringify(notes)); }
+function loadSettings(){
+  let s = {};
+  try{ s = JSON.parse(localStorage.getItem(LS_SETTINGS)) || {}; }catch(e){}
+  return Object.assign({provider:'anthropic', apiKey:'', model:'', baseUrl:''}, s);
+}
+function saveSettings(s){ localStorage.setItem(LS_SETTINGS, JSON.stringify(s)); }
+
+let notes = loadNotes();
+let settings = loadSettings();
+
+/* ==================== 工具 ==================== */
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function fmtDate(iso){
+  const d = new Date(iso), now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const day = new Date(d); day.setHours(0,0,0,0);
+  const today = new Date(now); today.setHours(0,0,0,0);
+  const diff = (today - day) / 86400000;
+  if(diff === 0) return '今天 ' + hm;
+  if(diff === 1) return '昨天 ' + hm;
+  if(d.getFullYear() === now.getFullYear()) return (d.getMonth()+1) + '月' + d.getDate() + '日 ' + hm;
+  return d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
+}
+function fmtDur(sec){
+  if(!sec) return '';
+  const m = Math.floor(sec/60), s = sec%60;
+  return m > 0 ? m + '分' + (s ? s + '秒' : '') : s + '秒';
+}
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ==================== 主页列表 ==================== */
+function renderList(){
+  const q = (document.getElementById('search-input').value || '').trim().toLowerCase();
+  const list = document.getElementById('note-list');
+  let data = notes.slice().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  if(q) data = data.filter(n =>
+    (n.title||'').toLowerCase().includes(q) ||
+    (n.transcript||'').toLowerCase().includes(q) ||
+    (n.summary && n.summary.abstract || '').toLowerCase().includes(q)
+  );
+  if(data.length === 0){
+    list.innerHTML = q
+      ? '<div class="empty"><div class="big">🔍</div><p>没有找到相关笔记</p></div>'
+      : '<div class="empty"><div class="big">🎙️</div><p>还没有笔记<br>点击下方按钮，说出你的第一个想法</p></div>';
+    return;
+  }
+  list.innerHTML = data.map(n => {
+    let badge = '';
+    if(n.status === 'summarizing') badge = '<span class="badge summarizing"><span class="spin"></span>总结中</span>';
+    else if(n.status === 'unsummarized') badge = '<span class="badge unsummarized">未总结</span>';
+    const preview = n.summary && n.summary.abstract ? n.summary.abstract : (n.transcript || '');
+    return '<div class="note-card" onclick="openDetail(\'' + n.id + '\')">' +
+      '<div class="note-title"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(n.title || '未命名') + '</span>' + badge + '</div>' +
+      '<div class="note-meta"><span>' + fmtDate(n.createdAt) + '</span>' +
+      (n.durationSec ? '<span>🎤 ' + fmtDur(n.durationSec) + '</span>' : '<span>✍️ 文字</span>') + '</div>' +
+      '<div class="note-preview">' + esc(preview) + '</div></div>';
+  }).join('');
+}
+
+/* ==================== 录音 ==================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+const recState = { active:false, finalText:'', interim:'', startAt:0, timer:null };
+
+function startRecording(){
+  if(!SR){
+    toast('当前浏览器不支持语音识别，请用 Safari 或 Chrome，或使用文字笔记');
+    return;
+  }
+  if(location.protocol !== 'https:' && location.hostname !== 'localhost' && location.protocol !== 'file:'){
+    toast('语音识别需要 HTTPS 环境');
+  }
+  recState.active = true;
+  recState.finalText = '';
+  recState.interim = '';
+  recState.startAt = Date.now();
+
+  rec = new SR();
+  rec.lang = 'zh-CN';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const t = e.results[i][0].transcript;
+      if(e.results[i].isFinal) recState.finalText += t;
+      else interim += t;
+    }
+    recState.interim = interim;
+    renderTranscript();
+  };
+  rec.onerror = (e) => {
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      toast('麦克风权限被拒绝，请在浏览器设置中允许');
+      recState.active = false;
+      showView('home');
+      stopTimer();
+    }
+    /* no-speech / aborted 等错误忽略，由 onend 自动重启 */
+  };
+  rec.onend = () => {
+    if(recState.active){
+      try{ rec.start(); }catch(e){}
+    }
+  };
+  try{ rec.start(); }catch(e){ toast('无法启动录音：' + e.message); return; }
+
+  document.getElementById('rec-timer').textContent = '00:00';
+  renderTranscript();
+  showView('record');
+  recState.timer = setInterval(() => {
+    const s = Math.floor((Date.now() - recState.startAt) / 1000);
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('rec-timer').textContent = pad(Math.floor(s/60)) + ':' + pad(s%60);
+  }, 500);
+}
+function renderTranscript(){
+  const el = document.getElementById('rec-transcript');
+  const f = esc(recState.finalText), i = esc(recState.interim);
+  el.innerHTML = (f || i)
+    ? f + '<span class="interim">' + i + '</span>'
+    : '<span class="hint">开始说话，文字会实时出现在这里…</span>';
+  el.scrollTop = el.scrollHeight;
+}
+function stopTimer(){ clearInterval(recState.timer); recState.timer = null; }
+function stopRec(){
+  recState.active = false;
+  stopTimer();
+  if(rec){ try{ rec.stop(); }catch(e){} rec = null; }
+}
+function cancelRecording(){
+  stopRec();
+  showView('home');
+}
+function finishRecording(){
+  const text = (recState.finalText + recState.interim).trim();
+  const dur = Math.floor((Date.now() - recState.startAt) / 1000);
+  stopRec();
+  showView('home');
+  if(!text){ toast('没有识别到内容'); return; }
+  createNote(text, dur);
+}
+
+/* ==================== 文字笔记 ==================== */
+function openTextModal(){
+  document.getElementById('text-modal').classList.add('active');
+  setTimeout(() => document.getElementById('text-input').focus(), 100);
+}
+function closeTextModal(){
+  document.getElementById('text-modal').classList.remove('active');
+  document.getElementById('text-input').value = '';
+}
+function saveTextNote(){
+  const text = document.getElementById('text-input').value.trim();
+  if(!text){ toast('内容不能为空'); return; }
+  closeTextModal();
+  createNote(text, 0);
+}
+
+/* ==================== 创建笔记 + AI 总结 ==================== */
+function createNote(text, durationSec){
+  const note = {
+    id: uid(),
+    createdAt: new Date().toISOString(),
+    durationSec: durationSec,
+    transcript: text,
+    title: text.slice(0, 14) + (text.length > 14 ? '…' : ''),
+    summary: null,
+    status: settings.apiKey ? 'summarizing' : 'unsummarized'
+  };
+  notes.push(note);
+  saveNotes();
+  renderList();
+  if(settings.apiKey) summarizeNote(note.id);
+  else toast('已保存（在设置中填入 API Key 可自动总结）');
+}
+
+async function summarizeNote(id){
+  const note = notes.find(n => n.id === id);
+  if(!note) return;
+  note.status = 'summarizing';
+  saveNotes(); renderList(); refreshDetailIfOpen(id);
+  try{
+    const result = await callAI(note.transcript);
+    note.title = result.title || note.title;
+    note.summary = { abstract: result.abstract || '', points: Array.isArray(result.points) ? result.points : [] };
+    note.status = 'done';
+    saveNotes(); renderList(); refreshDetailIfOpen(id);
+  }catch(err){
+    note.status = 'unsummarized';
+    saveNotes(); renderList(); refreshDetailIfOpen(id);
+    toast('总结失败：' + (err.message || err).toString().slice(0, 60));
+  }
+}
+
+function buildPrompt(transcript){
+  return '你是一个笔记助手。请阅读下面这段语音转录文字，提炼说话者的核心想法。\n' +
+    '只输出一个 JSON 对象，不要任何其他文字、不要代码块标记，格式：\n' +
+    '{"title":"不超过15个字的标题","abstract":"2~3句话的摘要","points":["要点1","要点2"]}\n' +
+    '要点 1~5 条。转录原文：\n"""\n' + transcript + '\n"""';
+}
+function parseAIJson(text){
+  let t = (text || '').trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+  try{ return JSON.parse(t); }catch(e){}
+  const m = t.match(/\{[\s\S]*\}/);
+  if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+  /* 解析失败时退化为纯文本摘要 */
+  return { title:'', abstract:t.slice(0, 200), points:[] };
+}
+
+async function callAI(transcript){
+  const prompt = buildPrompt(transcript);
+  if(settings.provider === 'anthropic'){
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-api-key': settings.apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model: settings.model || 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [{role:'user', content: prompt}]
+      })
+    });
+    if(!resp.ok){
+      const errBody = await resp.text();
+      throw new Error('HTTP ' + resp.status + ' ' + errBody.slice(0, 120));
+    }
+    const data = await resp.json();
+    return parseAIJson(data.content && data.content[0] && data.content[0].text);
+  }else{
+    const base = (settings.baseUrl || 'https://api.openai.com').replace(/\/+$/, '');
+    const resp = await fetch(base + '/v1/chat/completions', {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'authorization':'Bearer ' + settings.apiKey
+      },
+      body: JSON.stringify({
+        model: settings.model || 'gpt-4o-mini',
+        messages: [{role:'user', content: prompt}]
+      })
+    });
+    if(!resp.ok){
+      const errBody = await resp.text();
+      throw new Error('HTTP ' + resp.status + ' ' + errBody.slice(0, 120));
+    }
+    const data = await resp.json();
+    return parseAIJson(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content);
+  }
+}
+
+/* ==================== 详情页 ==================== */
+let currentDetailId = null;
+function openDetail(id){
+  currentDetailId = id;
+  renderDetail();
+}
+function refreshDetailIfOpen(id){
+  if(currentDetailId === id && document.getElementById('detail-page')) renderDetail();
+}
+function renderDetail(){
+  const n = notes.find(x => x.id === currentDetailId);
+  if(!n){ closeSubpage(); return; }
+  let summaryHtml = '';
+  if(n.status === 'summarizing'){
+    summaryHtml = '<div class="section"><h3><span class="bar"></span>AI 总结</h3><div style="color:var(--text2)"><span class="spin"></span> 正在生成总结…</div></div>';
+  }else if(n.summary){
+    summaryHtml = '<div class="section"><h3><span class="bar"></span>AI 总结</h3>' +
+      '<div class="summary-abstract">' + esc(n.summary.abstract) + '</div>' +
+      (n.summary.points && n.summary.points.length
+        ? '<ul class="points">' + n.summary.points.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul>'
+        : '') +
+      '</div>';
+  }else{
+    summaryHtml = '<div class="section"><h3><span class="bar"></span>AI 总结</h3>' +
+      '<div style="color:var(--text3);font-size:14px;margin-bottom:10px">尚未生成总结' + (settings.apiKey ? '' : '（请先在设置中填入 API Key）') + '</div>' +
+      (settings.apiKey ? '<button class="act-btn primary" style="width:100%" onclick="summarizeNote(\'' + n.id + '\')">✨ 生成总结</button>' : '') +
+      '</div>';
+  }
+  const html =
+    '<div class="subpage" id="detail-page">' +
+      '<div class="sub-top">' +
+        '<button class="icon-btn" onclick="closeSubpage()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>' +
+        '<span class="title">笔记详情</span><span style="width:38px"></span>' +
+      '</div>' +
+      '<div class="sub-body">' +
+        '<div class="detail-title-row"><h2>' + esc(n.title || '未命名') + '</h2>' +
+          '<button class="icon-btn" onclick="editTitle()" aria-label="编辑标题"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div>' +
+        '<div class="detail-meta"><span>' + fmtDate(n.createdAt) + '</span>' +
+          (n.durationSec ? '<span>🎤 录音 ' + fmtDur(n.durationSec) + '</span>' : '<span>✍️ 文字笔记</span>') + '</div>' +
+        summaryHtml +
+        '<div class="section"><h3><span class="bar"></span>原文</h3><div class="transcript-text">' + esc(n.transcript) + '</div></div>' +
+        '<div class="detail-actions">' +
+          (n.status !== 'summarizing' && settings.apiKey ? '<button class="act-btn primary" onclick="summarizeNote(\'' + n.id + '\')"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>重新总结</button>' : '') +
+          '<button class="act-btn" onclick="copyNote()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制</button>' +
+          '<button class="act-btn danger" onclick="deleteNote()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.getElementById('subpage-root').innerHTML = html;
+}
+function editTitle(){
+  const n = notes.find(x => x.id === currentDetailId);
+  if(!n) return;
+  const t = prompt('编辑标题', n.title || '');
+  if(t !== null && t.trim()){
+    n.title = t.trim();
+    saveNotes(); renderList(); renderDetail();
+  }
+}
+function copyNote(){
+  const n = notes.find(x => x.id === currentDetailId);
+  if(!n) return;
+  let text = '【' + (n.title || '未命名') + '】\n' + fmtDate(n.createdAt) + '\n\n';
+  if(n.summary){
+    text += '摘要：' + n.summary.abstract + '\n';
+    if(n.summary.points && n.summary.points.length) text += n.summary.points.map(p => '· ' + p).join('\n') + '\n';
+    text += '\n';
+  }
+  text += '原文：\n' + n.transcript;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(() => toast('已复制'), () => toast('复制失败'));
+  }else{
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    toast('已复制');
+  }
+}
+function deleteNote(){
+  const n = notes.find(x => x.id === currentDetailId);
+  if(!n) return;
+  if(!confirm('确定删除这条笔记吗？')) return;
+  notes = notes.filter(x => x.id !== currentDetailId);
+  saveNotes(); renderList(); closeSubpage();
+  toast('已删除');
+}
+function closeSubpage(){
+  currentDetailId = null;
+  document.getElementById('subpage-root').innerHTML = '';
+}
+
+/* ==================== 设置页 ==================== */
+function openSettings(){
+  const s = settings;
+  const html =
+    '<div class="subpage" id="settings-page">' +
+      '<div class="sub-top">' +
+        '<button class="icon-btn" onclick="closeSubpage()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>' +
+        '<span class="title">设置</span><span style="width:38px"></span>' +
+      '</div>' +
+      '<div class="sub-body">' +
+        '<div class="section"><h3><span class="bar"></span>AI 总结配置</h3>' +
+          '<div class="field"><label>服务商</label>' +
+            '<select id="set-provider" onchange="onProviderChange()">' +
+              '<option value="anthropic"' + (s.provider==='anthropic'?' selected':'') + '>Claude (Anthropic)</option>' +
+              '<option value="openai"' + (s.provider==='openai'?' selected':'') + '>OpenAI 兼容接口（OpenAI / DeepSeek / Kimi 等）</option>' +
+            '</select></div>' +
+          '<div class="field"><label>API Key</label>' +
+            '<input id="set-key" type="password" placeholder="sk-…" value="' + esc(s.apiKey) + '">' +
+            '<div class="tip">Key 只保存在你自己的手机本地，不会上传到任何服务器。</div></div>' +
+          '<div class="field" id="field-baseurl" style="display:' + (s.provider==='openai'?'block':'none') + '"><label>接口地址 Base URL</label>' +
+            '<input id="set-baseurl" type="url" placeholder="https://api.openai.com" value="' + esc(s.baseUrl) + '">' +
+            '<div class="tip">DeepSeek 填 https://api.deepseek.com，Kimi 填 https://api.moonshot.cn</div></div>' +
+          '<div class="field"><label>模型（可留空用默认）</label>' +
+            '<input id="set-model" type="text" placeholder="' + (s.provider==='openai'?'gpt-4o-mini / deepseek-chat':'claude-haiku-4-5-20251001') + '" value="' + esc(s.model) + '"></div>' +
+          '<button class="btn-main" onclick="saveSettingsForm()">保存配置</button>' +
+          '<button class="btn-ghost" onclick="testAI()">测试连接</button>' +
+        '</div>' +
+        '<div class="section"><h3><span class="bar"></span>数据</h3>' +
+          '<div class="help-text" style="margin-bottom:10px">共 ' + notes.length + ' 条笔记，全部存储在本机浏览器中。建议定期导出备份。</div>' +
+          '<button class="btn-ghost" style="margin-top:0" onclick="exportNotes()">📦 导出全部笔记 (JSON)</button>' +
+        '</div>' +
+        '<div class="section"><h3><span class="bar"></span>使用说明</h3>' +
+          '<div class="help-text">' +
+            '<b>录音转文字</b>：使用手机系统自带的语音识别，免费。iPhone 请用 Safari 打开；安卓请用 Chrome（部分地区识别服务可能不可用）。<br>' +
+            '<b>HTTPS</b>：语音识别要求页面通过 https 访问（本地 localhost 也可以）。<br>' +
+            '<b>添加到主屏幕</b>：在浏览器分享菜单中选择「添加到主屏幕」，即可像 App 一样使用。<br>' +
+            '<b>AI 总结</b>：录音结束后自动生成标题、摘要和要点；没有填 Key 时只保存原文，之后可补总结。' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.getElementById('subpage-root').innerHTML = html;
+}
+function onProviderChange(){
+  const p = document.getElementById('set-provider').value;
+  document.getElementById('field-baseurl').style.display = p === 'openai' ? 'block' : 'none';
+  document.getElementById('set-model').placeholder = p === 'openai' ? 'gpt-4o-mini / deepseek-chat' : 'claude-haiku-4-5-20251001';
+}
+function saveSettingsForm(){
+  settings.provider = document.getElementById('set-provider').value;
+  settings.apiKey = document.getElementById('set-key').value.trim();
+  settings.model = document.getElementById('set-model').value.trim();
+  const bu = document.getElementById('set-baseurl');
+  settings.baseUrl = bu ? bu.value.trim() : '';
+  saveSettings(settings);
+  toast('已保存');
+}
+async function testAI(){
+  saveSettingsForm();
+  if(!settings.apiKey){ toast('请先填入 API Key'); return; }
+  toast('正在测试…');
+  try{
+    const r = await callAI('这是一条测试语音：今天天气不错，我打算下午去公园散步，顺便思考一下新项目的方向。');
+    toast('✅ 连接成功：' + (r.title || '已返回结果'));
+  }catch(err){
+    toast('❌ 失败：' + (err.message || err).toString().slice(0, 80));
+  }
+}
+function exportNotes(){
+  const blob = new Blob([JSON.stringify(notes, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'voicenotes-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ==================== 视图切换 ==================== */
+function showView(name){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+}
+
+/* ==================== 启动 ==================== */
+renderList();
+</script>
+</body>
+</html>
