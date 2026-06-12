@@ -55,13 +55,22 @@ header.topbar{
 }
 .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--text3)}
 
-/* ---------- 笔记卡片 ---------- */
+/* ---------- 笔记卡片（支持滑动删除） ---------- */
+.swipe-item{position:relative;margin-bottom:12px;border-radius:var(--radius)}
+.swipe-bg{
+  position:absolute;inset:0;border-radius:var(--radius);
+  background:linear-gradient(90deg,#fb7185,#ef4444);
+  display:flex;align-items:center;justify-content:space-between;overflow:hidden;
+}
+.swipe-bg .del-btn{
+  height:100%;padding:0 22px;color:#fff;font-size:14px;font-weight:600;
+  display:flex;align-items:center;gap:6px;
+}
 .note-card{
   background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
-  padding:15px 16px;margin-bottom:12px;cursor:pointer;
-  transition:transform .15s, box-shadow .15s; position:relative;overflow:hidden;
+  padding:15px 16px;cursor:pointer;position:relative;overflow:hidden;
+  touch-action:pan-y;user-select:none;-webkit-user-select:none;will-change:transform;
 }
-.note-card:active{transform:scale(.985)}
 .note-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad);opacity:.85}
 .note-title{font-weight:650;font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
 .note-meta{font-size:12px;color:var(--text3);margin-bottom:7px;display:flex;gap:10px;align-items:center}
@@ -207,6 +216,8 @@ header.topbar{
   opacity:0;pointer-events:none;transition:all .25s;z-index:99;white-space:nowrap;max-width:88vw;overflow:hidden;text-overflow:ellipsis;
 }
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.actionable{pointer-events:auto}
+#toast .undo{margin-left:14px;color:#7dd3fc;font-weight:650;font-size:13.5px}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid #c7d2fe;border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px;margin-right:4px}
 @keyframes rot{to{transform:rotate(360deg)}}
 </style>
@@ -329,11 +340,28 @@ function fmtDur(sec){
   return m > 0 ? m + '分' + (s ? s + '秒' : '') : s + '秒';
 }
 let toastTimer = null;
-function toast(msg){
+let toastAction = null;
+function toast(msg, actionLabel, actionFn){
   const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
+  el.textContent = msg;
+  el.classList.toggle('actionable', !!actionLabel);
+  if(actionLabel && actionFn){
+    toastAction = actionFn;
+    const btn = document.createElement('button');
+    btn.className = 'undo';
+    btn.textContent = actionLabel;
+    btn.onclick = () => {
+      const fn = toastAction; toastAction = null;
+      el.classList.remove('show');
+      if(fn) fn();
+    };
+    el.appendChild(btn);
+  }else{
+    toastAction = null;
+  }
+  el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); toastAction = null; }, actionLabel ? 4500 : 2200);
 }
 
 /* ==================== 主页列表 ==================== */
@@ -357,12 +385,129 @@ function renderList(){
     if(n.status === 'summarizing') badge = '<span class="badge summarizing"><span class="spin"></span>总结中</span>';
     else if(n.status === 'unsummarized') badge = '<span class="badge unsummarized">未总结</span>';
     const preview = n.summary && n.summary.abstract ? n.summary.abstract : (n.transcript || '');
-    return '<div class="note-card" onclick="openDetail(\'' + n.id + '\')">' +
+    const delBtn = '<button class="del-btn" onclick="swipeDeleteBtn(event,\'' + n.id + '\')">🗑 删除</button>';
+    return '<div class="swipe-item" data-id="' + n.id + '">' +
+      '<div class="swipe-bg">' + delBtn + delBtn + '</div>' +
+      '<div class="note-card" onclick="cardClick(\'' + n.id + '\')">' +
       '<div class="note-title"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(n.title || '未命名') + '</span>' + badge + '</div>' +
       '<div class="note-meta"><span>' + fmtDate(n.createdAt) + '</span>' +
       (n.durationSec ? '<span>🎤 ' + fmtDur(n.durationSec) + '</span>' : '<span>✍️ 文字</span>') + '</div>' +
-      '<div class="note-preview">' + esc(preview) + '</div></div>';
+      '<div class="note-preview">' + esc(preview) + '</div></div></div>';
   }).join('');
+  openSwipeItem = null;
+}
+
+/* ==================== 滑动删除（iOS 风格，左右皆可） ==================== */
+const SNAP_OPEN = 92;      /* 滑开后停留位置，露出删除键 */
+const OPEN_THRESHOLD = 64; /* 超过此距离松手 → 停留在删除键 */
+const FULL_RATIO = 0.55;   /* 超过宽度 55% 松手 → 直接删除 */
+let swipeState = null;
+let openSwipeItem = null;
+let suppressCardClick = false;
+
+function cardTransform(card, x, animate){
+  card.style.transition = animate ? 'transform .22s ease' : 'none';
+  card.style.transform = 'translateX(' + x + 'px)';
+}
+function closeOpenSwipe(){
+  if(openSwipeItem){
+    const card = openSwipeItem.querySelector('.note-card');
+    if(card) cardTransform(card, 0, true);
+    openSwipeItem = null;
+  }
+}
+function initSwipe(){
+  const list = document.getElementById('note-list');
+  list.addEventListener('pointerdown', (e) => {
+    const card = e.target.closest('.note-card');
+    if(!card) return;
+    const item = card.parentElement;
+    if(openSwipeItem && openSwipeItem !== item) closeOpenSwipe();
+    const base = (openSwipeItem === item)
+      ? (new DOMMatrixReadOnly(getComputedStyle(card).transform)).m41 || 0
+      : 0;
+    swipeState = { item, card, id: item.dataset.id, x0: e.clientX, y0: e.clientY, dx: base, base, mode: null, width: item.offsetWidth };
+    cardTransform(card, base, false);
+  });
+  list.addEventListener('pointermove', (e) => {
+    if(!swipeState) return;
+    const rawDx = e.clientX - swipeState.x0;
+    const dy = e.clientY - swipeState.y0;
+    if(!swipeState.mode){
+      if(Math.abs(rawDx) < 10 && Math.abs(dy) < 10) return;
+      swipeState.mode = Math.abs(rawDx) > Math.abs(dy) ? 'h' : 'v';
+      if(swipeState.mode === 'h'){
+        try{ swipeState.card.setPointerCapture(e.pointerId); }catch(err){}
+      }
+    }
+    if(swipeState.mode !== 'h') return;
+    let dx = swipeState.base + rawDx;
+    const max = swipeState.width * 0.92;
+    dx = Math.max(-max, Math.min(max, dx));
+    swipeState.dx = dx;
+    cardTransform(swipeState.card, dx, false);
+  });
+  const finish = (e) => {
+    const s = swipeState;
+    swipeState = null;
+    if(!s) return;
+    if(s.mode !== 'h'){
+      if(openSwipeItem !== s.item) cardTransform(s.card, 0, true);
+      return;
+    }
+    suppressCardClick = true;
+    setTimeout(() => { suppressCardClick = false; }, 350);
+    const adx = Math.abs(s.dx);
+    if(adx > s.width * FULL_RATIO){
+      /* 滑得足够远：直接删除 */
+      cardTransform(s.card, s.dx > 0 ? s.width : -s.width, true);
+      openSwipeItem = null;
+      setTimeout(() => deleteNoteById(s.id), 180);
+    }else if(adx > OPEN_THRESHOLD){
+      /* 停留：露出删除键 */
+      cardTransform(s.card, s.dx > 0 ? SNAP_OPEN : -SNAP_OPEN, true);
+      openSwipeItem = s.item;
+    }else{
+      cardTransform(s.card, 0, true);
+      if(openSwipeItem === s.item) openSwipeItem = null;
+    }
+  };
+  list.addEventListener('pointerup', finish);
+  list.addEventListener('pointercancel', finish);
+  /* 点击列表外区域时收起已滑开的卡片 */
+  document.addEventListener('pointerdown', (e) => {
+    if(openSwipeItem && !e.target.closest('.swipe-item')) closeOpenSwipe();
+  });
+}
+function cardClick(id){
+  if(suppressCardClick) return;
+  if(openSwipeItem){ closeOpenSwipe(); return; }
+  openDetail(id);
+}
+function swipeDeleteBtn(e, id){
+  e.stopPropagation();
+  const item = document.querySelector('.swipe-item[data-id="' + id + '"]');
+  if(item){
+    const card = item.querySelector('.note-card');
+    const w = item.offsetWidth;
+    const m = (new DOMMatrixReadOnly(getComputedStyle(card).transform)).m41 || 0;
+    cardTransform(card, m >= 0 ? w : -w, true);
+  }
+  openSwipeItem = null;
+  setTimeout(() => deleteNoteById(id), 160);
+}
+function deleteNoteById(id){
+  const idx = notes.findIndex(n => n.id === id);
+  if(idx === -1){ renderList(); return; }
+  const removed = notes.splice(idx, 1)[0];
+  saveNotes();
+  renderList();
+  toast('已删除「' + (removed.title || '未命名').slice(0, 10) + '」', '撤销', () => {
+    notes.push(removed);
+    saveNotes();
+    renderList();
+    toast('已恢复');
+  });
 }
 
 /* ==================== 录音 ==================== */
@@ -736,6 +881,7 @@ function showView(name){
 }
 
 /* ==================== 启动 ==================== */
+initSwipe();
 renderList();
 </script>
 </body>
